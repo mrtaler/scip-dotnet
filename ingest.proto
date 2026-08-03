@@ -1,0 +1,118 @@
+// Codegraph ingest contract: a gRPC client-stream of typed chunks replacing the
+// single buffered POST of index.scip bytes.
+//
+// Design invariants (agreed 2026-08-01):
+//   - scip.Document chunks are byte-for-byte STANDARD SCIP - the canonical part.
+//   - LogTemplateBatch / CallsBatch are OUR extensions and travel as their own
+//     chunk types, NEVER inside the SCIP messages, so the canonical stream stays
+//     standard-compatible: extensions live next to the stream, never inside it.
+//   - One stream = one transactional load session: meta (wipe + loading mark) ->
+//     documents -> extension batches -> Complete (bridge/sweep/stamp + unmark).
+//     Extension edges reference symbols by SCIP id; MERGE-by-key tolerates any
+//     arrival order (same mechanism as cross-repo linking).
+//   - The server streams UploadProgress back so the producer can render honest
+//     load percentages; the final message carries the load summary.
+syntax = "proto3";
+
+package codegraph;
+
+import "scip.proto";
+
+option csharp_namespace = "Codegraph.Ingest";
+
+// Ingest service exposed by the graph loader next to its HTTP endpoints.
+service CodegraphIngest {
+  // Uploads one repository index as a stream of typed chunks. The first chunk
+  // MUST be IngestMeta; document chunks follow; extension batches may arrive
+  // at any point after meta. Closing the request stream completes the session.
+  rpc Upload(stream IngestChunk) returns (stream UploadProgress);
+}
+
+// One frame of the upload stream.
+message IngestChunk {
+  oneof payload {
+    IngestMeta meta = 1;
+    scip.Document document = 2;
+    LogTemplateBatch log_templates = 3;
+    CallsBatch calls = 4;
+  }
+}
+
+// Session header - everything the loader needs before the first document.
+message IngestMeta {
+  // Repository partition key, e.g. "my-service".
+  string repo = 1;
+  // Commit the index was produced at; empty when unknown.
+  string commit = 2;
+  // Path of the indexed solution/project inside the repo (freshness stamp detail).
+  string path = 3;
+  // Package ids this repo ships (PROVIDES bridge input).
+  repeated string package_ids = 4;
+  // Package ids declared in csproj files (DECLARES edges input).
+  repeated string declared_packages = 5;
+  // Expected document count when the producer knows it; 0 = unknown.
+  // Lets the server report percentages instead of bare counters.
+  int32 expected_documents = 6;
+  // Additive session: wipe only the files present in the incoming stream
+  // (per-document replace) instead of the whole repo. Used by per-project
+  // runs - each project is its own small session, so a failing project
+  // aborts only its own contribution.
+  bool additive = 7;
+  // Compilation was INCOMPLETE for this run: the build/restore step failed or
+  // the workspace reported load failures, so symbols may be missing and types
+  // unresolved (e.g. a Windows-only project whose build fails on macOS still
+  // yields a partial Roslyn model). Loader marks the run's nodes partial so
+  // read tools can warn honestly.
+  bool partial = 8;
+  // Human-readable reason for partial (e.g. "build exited 1", "workspace load failures").
+  string partial_reason = 9;
+}
+
+// One Log*/BeginScope call site (extension; SCIP does not model log templates).
+message LogTemplateFact {
+  string file = 1;
+  int32 line = 2;
+  string level = 3;
+  // Message template when it is a compile-time constant; absent otherwise.
+  optional string template = 4;
+  // False when the message is interpolated/built at runtime.
+  bool templated = 5;
+}
+
+// Extension chunk: log templates collected while walking.
+message LogTemplateBatch {
+  repeated LogTemplateFact facts = 1;
+}
+
+// One precise call edge collected from the Roslyn semantic model (extension;
+// the SCIP standard has no call graph - a call is an unmarked reference).
+message CallEdge {
+  // SCIP symbol id of the calling method/constructor (enclosing symbol).
+  string caller_symbol = 1;
+  // SCIP symbol id of the invoked method/constructor.
+  string callee_symbol = 2;
+  string file = 3;
+  int32 line = 4;
+}
+
+// Extension chunk: precise CALLS edges.
+message CallsBatch {
+  repeated CallEdge edges = 1;
+}
+
+// Server -> producer progress feedback; the final message is the load summary.
+message UploadProgress {
+  // Load phase: wiping | documents | extensions | completing | done | failed.
+  string phase = 1;
+  // Documents loaded so far.
+  int32 documents_loaded = 2;
+  // Echo of IngestMeta.expected_documents (0 = unknown).
+  int32 expected_documents = 3;
+  // Human-readable detail (error text when phase = failed).
+  string message = 4;
+  // Filled on the final "done" message.
+  int32 definitions = 5;
+  int32 references = 6;
+  int32 call_edges = 7;
+  int32 log_templates = 8;
+}

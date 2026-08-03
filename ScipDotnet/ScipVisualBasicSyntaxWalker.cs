@@ -19,6 +19,14 @@ public class ScipVisualBasicSyntaxWalker : VisualBasicSyntaxWalker
         _semanticModel = semanticModel;
     }
 
+    public override void VisitGenericName(GenericNameSyntax node)
+    {
+        // Same gap as the C# walker: generic invocations are GenericNameSyntax and
+        // produced no reference occurrence without this override.
+        _scipDocumentIndexer.VisitOccurrence(_semanticModel.GetSymbolInfo(node).Symbol, node.Identifier.GetLocation(), false);
+        base.VisitGenericName(node);
+    }
+
     public override void VisitIdentifierName(IdentifierNameSyntax node)
     {
         _scipDocumentIndexer.VisitOccurrence(_semanticModel.GetSymbolInfo(node).Symbol, node.GetLocation(), false);

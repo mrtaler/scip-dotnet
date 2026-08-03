@@ -16,19 +16,36 @@ public static class IndexCommandHandler
         IHost host,
         List<FileInfo> projects,
         string output,
+        Uri? outputUrl,
+        Uri? ingestUrl,
         FileInfo workingDirectory,
         List<string> include,
         List<string> exclude,
         bool allowGlobalSymbolDefinitions,
         int dotnetRestoreTimeout,
         bool skipDotnetRestore,
-        FileInfo? nugetConfigPath
+        FileInfo? nugetConfigPath,
+        bool useBuild,
+        bool analyzers,
+        List<string> property
         )
     {
         var logger = host.Services.GetRequiredService<ILogger<IndexCommandOptions>>();
         var matcher = new Matcher();
         matcher.AddIncludePatterns(include.Count == 0 ? new[] { "**" } : include);
         matcher.AddExcludePatterns(exclude);
+
+        foreach (var pair in property)
+        {
+            var separator = pair.IndexOf('=');
+            if (separator <= 0)
+            {
+                logger.LogError("Invalid --property '{Property}': expected Key=Value.", pair);
+                return 1;
+            }
+
+            WorkspaceGlobalProperties.Values[pair[..separator]] = pair[(separator + 1)..];
+        }
 
         var projectFiles = projects.Count > 0
             ? projects
@@ -47,9 +64,23 @@ public static class IndexCommandHandler
             allowGlobalSymbolDefinitions,
             dotnetRestoreTimeout,
             skipDotnetRestore,
-            nugetConfigPath
+            nugetConfigPath,
+            useBuild,
+            outputUrl,
+            analyzers,
+            property
         );
-        await ScipIndex(host, options);
+        if (ingestUrl != null)
+        {
+            var indexer = host.Services.GetRequiredService<ScipProjectIndexer>();
+            var ws = host.Services.GetRequiredService<MSBuildWorkspace>();
+            await IngestStreamClient.UploadAsync(ingestUrl, indexer.IndexDocuments(host, options), options,
+                () => ws.Diagnostics.Any(d => d.Kind == Microsoft.CodeAnalysis.WorkspaceDiagnosticKind.Failure));
+        }
+        else
+        {
+            await ScipIndex(host, options);
+        }
 
 
         // Log msbuild workspace diagnostic information after the index command finishes
@@ -110,9 +141,88 @@ public static class IndexCommandHandler
             options.Logger.LogWarning("Indexing finished without error but no documents were indexed.");
         }
 
-        await File.WriteAllBytesAsync(options.Output.FullName, index.ToByteArray());
-        options.Logger.LogInformation("done: {OptionsOutput} {TimeElapsed}", options.Output,
-            stopwatch.Elapsed.ToFriendlyString());
+        if (options.OutputUrl != null)
+        {
+            var bytes = index.ToByteArray();
+            if (options.Output.Name != "-")
+            {
+                await File.WriteAllBytesAsync(options.Output.FullName, bytes);
+                options.Logger.LogInformation("local copy: {OptionsOutput}", options.Output);
+            }
+
+            using var httpClient = new HttpClient();
+            using var content = new ByteArrayContent(bytes);
+            content.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-scip");
+            var response = await httpClient.PostAsync(options.OutputUrl, content);
+            response.EnsureSuccessStatusCode();
+            options.Logger.LogInformation("done: POST {OutputUrl} {StatusCode} {TimeElapsed}",
+                options.OutputUrl, (int)response.StatusCode, stopwatch.Elapsed.ToFriendlyString());
+
+            if (options.LogTemplates.Count > 0)
+            {
+                var templatesUrl = options.OutputUrl + (options.OutputUrl.Query.Length > 0 ? "&" : "?")
+                    + "channel=logtemplates";
+                using var templatesContent = new StringContent(
+                    System.Text.Json.JsonSerializer.Serialize(options.LogTemplates),
+                    System.Text.Encoding.UTF8,
+                    "application/json");
+                var templatesResponse = await httpClient.PostAsync(templatesUrl, templatesContent);
+                options.Logger.LogInformation(
+                    "log templates: POST {Count} facts {StatusCode}",
+                    options.LogTemplates.Count, (int)templatesResponse.StatusCode);
+            }
+
+            if (options.Calls.Count > 0)
+            {
+                var callsUrl = options.OutputUrl + (options.OutputUrl.Query.Length > 0 ? "&" : "?")
+                    + "channel=calls";
+                using var callsContent = new StringContent(
+                    System.Text.Json.JsonSerializer.Serialize(options.Calls),
+                    System.Text.Encoding.UTF8,
+                    "application/json");
+                var callsResponse = await httpClient.PostAsync(callsUrl, callsContent);
+                options.Logger.LogInformation(
+                    "calls: POST {Count} edges {StatusCode}",
+                    options.Calls.Count, (int)callsResponse.StatusCode);
+            }
+        }
+        else if (options.Output.Name == "-")
+        {
+            await using var stdout = Console.OpenStandardOutput();
+            index.WriteTo(stdout);
+            await stdout.FlushAsync();
+            options.Logger.LogInformation("done: <stdout> {TimeElapsed}",
+                stopwatch.Elapsed.ToFriendlyString());
+        }
+        else
+        {
+            await File.WriteAllBytesAsync(options.Output.FullName, index.ToByteArray());
+            options.Logger.LogInformation("done: {OptionsOutput} {TimeElapsed}", options.Output,
+                stopwatch.Elapsed.ToFriendlyString());
+
+            if (options.LogTemplates.Count > 0)
+            {
+                var templatesPath = options.Output.FullName + ".logtemplates.json";
+                await File.WriteAllTextAsync(
+                    templatesPath,
+                    System.Text.Json.JsonSerializer.Serialize(options.LogTemplates));
+                options.Logger.LogInformation(
+                    "log templates: {Count} facts written to {TemplatesPath}",
+                    options.LogTemplates.Count, templatesPath);
+            }
+
+            if (options.Calls.Count > 0)
+            {
+                var callsPath = options.Output.FullName + ".calls.json";
+                await File.WriteAllTextAsync(
+                    callsPath,
+                    System.Text.Json.JsonSerializer.Serialize(options.Calls));
+                options.Logger.LogInformation(
+                    "calls: {Count} edges written to {CallsPath}",
+                    options.Calls.Count, callsPath);
+            }
+        }
     }
 
     private static string FixThisProblem(string examplePath) =>
