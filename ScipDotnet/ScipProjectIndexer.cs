@@ -232,8 +232,11 @@ public class ScipProjectIndexer
     /// <summary>
     /// Detects document-wide SCIP roles: Test for documents of test projects
     /// (project or assembly name containing "Test", or a test/ path segment),
-    /// Generated for source-generated documents (SourceGeneratedDocument, or
-    /// obj/generated output when indexing with --use-build).
+    /// Generated for generated documents — SourceGeneratedDocument, anything under an
+    /// obj/ directory (source generators with EmitCompilerGeneratedFiles, Grpc.Tools and
+    /// protobuf stubs, Razor output), and the conventional *.g.cs / *.designer.cs /
+    /// *.generated.cs suffixes. Generated members stay indexable as symbols; consumers
+    /// that reason about hand-written logic (vector inputs, duplicate detection) skip them.
     /// </summary>
     private static int DetectDocumentRoles(Document document)
     {
@@ -249,7 +252,10 @@ public class ScipProjectIndexer
         }
 
         var isGenerated = document is Microsoft.CodeAnalysis.SourceGeneratedDocument
-            || filePath.Contains("obj" + Path.DirectorySeparatorChar + "generated", StringComparison.OrdinalIgnoreCase);
+            || filePath.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+            || filePath.EndsWith(".g.cs", StringComparison.OrdinalIgnoreCase)
+            || filePath.EndsWith(".designer.cs", StringComparison.OrdinalIgnoreCase)
+            || filePath.EndsWith(".generated.cs", StringComparison.OrdinalIgnoreCase);
         if (isGenerated)
         {
             roles |= (int)Scip.SymbolRole.Generated;

@@ -35,6 +35,7 @@ message IngestChunk {
     scip.Document document = 2;
     LogTemplateBatch log_templates = 3;
     CallsBatch calls = 4;
+    ChunkBatch chunks = 5;
   }
 }
 
@@ -100,6 +101,38 @@ message CallsBatch {
   repeated CallEdge edges = 1;
 }
 
+// One vector input derived from a method/constructor while walking (extension;
+// SCIP models symbols and references, never bodies). Three aspects per callable:
+//   "signature" - header only (modifiers, return type, name, parameters);
+//   "body"      - the statements with the header stripped; carries the structural
+//                 facts (body_lines, max_nesting_depth, cyclomatic_complexity);
+//   "block"     - one logical block of a LONG body (try/catch/if/loop/local
+//                 function), ordinal-numbered within its method.
+// normalized_text is what gets embedded: comments removed, whitespace collapsed.
+// text_hash (sha256 hex of normalized_text) is the content key - identical text
+// anywhere means the same vector, and a re-index re-embeds only unseen hashes.
+message ChunkFact {
+  // SCIP symbol id of the owning method/constructor.
+  string symbol = 1;
+  string aspect = 2;
+  string file = 3;
+  int32 line_start = 4;
+  int32 line_end = 5;
+  string text_hash = 6;
+  string normalized_text = 7;
+  // Block index within the method (0 for signature/body).
+  int32 ordinal = 8;
+  // Structural facts, present on the "body" aspect only.
+  int32 body_lines = 9;
+  int32 max_nesting_depth = 10;
+  int32 cyclomatic_complexity = 11;
+}
+
+// Extension chunk: vector inputs collected while walking.
+message ChunkBatch {
+  repeated ChunkFact facts = 1;
+}
+
 // Server -> producer progress feedback; the final message is the load summary.
 message UploadProgress {
   // Load phase: wiping | documents | extensions | completing | done | failed.
@@ -115,4 +148,5 @@ message UploadProgress {
   int32 references = 6;
   int32 call_edges = 7;
   int32 log_templates = 8;
+  int32 chunks = 9;
 }

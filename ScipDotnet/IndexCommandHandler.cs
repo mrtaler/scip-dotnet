@@ -27,7 +27,8 @@ public static class IndexCommandHandler
         FileInfo? nugetConfigPath,
         bool useBuild,
         bool analyzers,
-        List<string> property
+        List<string> property,
+        bool noChunks
         )
     {
         var logger = host.Services.GetRequiredService<ILogger<IndexCommandOptions>>();
@@ -68,7 +69,8 @@ public static class IndexCommandHandler
             useBuild,
             outputUrl,
             analyzers,
-            property
+            property,
+            !noChunks
         );
         if (ingestUrl != null)
         {

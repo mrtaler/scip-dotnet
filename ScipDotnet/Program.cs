@@ -70,6 +70,10 @@ public static class Program
             {
                 Arity = ArgumentArity.ZeroOrMore
             },
+            new Option<bool>("--no-chunks", () => false,
+                "Do not collect the per-method vector inputs (signature / body / logical blocks with " +
+                "content hashes and structural facts) that normally travel as an extension batch next " +
+                "to the SCIP stream. On by default: extraction is microseconds per method."),
         };
         indexCommand.Handler = CommandHandler.Create(IndexCommandHandler.Process);
         var rootCommand =

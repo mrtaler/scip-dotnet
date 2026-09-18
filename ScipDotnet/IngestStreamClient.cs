@@ -18,6 +18,13 @@ public static class IngestStreamClient
     private const int ExtensionBatchSize = 2000;
 
     /// <summary>
+    /// Vector inputs carry whole method bodies, so their batch is a quarter of the
+    /// other extension batches: five hundred long methods stay well under the 32 MiB
+    /// frame cap of the channel.
+    /// </summary>
+    private const int ChunkBatchSize = 500;
+
+    /// <summary>
     /// Runs the streaming upload session against <paramref name="ingestUrl"/>.
     /// </summary>
     /// <param name="ingestUrl">The h2c ingest endpoint; repo/commit/path/package/declares ride in the query string.</param>
@@ -115,6 +122,26 @@ public static class IngestStreamClient
             await call.RequestStream.WriteAsync(new IngestChunk { Calls = chunk });
         }
 
+        foreach (var batch in options.Chunks.Chunk(ChunkBatchSize))
+        {
+            var chunk = new ChunkBatch();
+            chunk.Facts.AddRange(batch.Select(fact => new Codegraph.Ingest.ChunkFact
+            {
+                Symbol = fact.Symbol,
+                Aspect = fact.Aspect,
+                File = fact.File,
+                LineStart = fact.LineStart,
+                LineEnd = fact.LineEnd,
+                TextHash = fact.TextHash,
+                NormalizedText = fact.NormalizedText,
+                Ordinal = fact.Ordinal,
+                BodyLines = fact.BodyLines,
+                MaxNestingDepth = fact.MaxNestingDepth,
+                CyclomaticComplexity = fact.CyclomaticComplexity,
+            }));
+            await call.RequestStream.WriteAsync(new IngestChunk { Chunks = chunk });
+        }
+
         if (workspaceHasFailures?.Invoke() == true && !options.CompilationIncomplete)
         {
             options.CompilationIncomplete = true;
@@ -136,7 +163,7 @@ public static class IngestStreamClient
         await call.RequestStream.CompleteAsync();
         await progressReader;
         options.Logger.LogInformation(
-            "ingest: stream finished — {Documents} documents, {Templates} log templates, {Calls} call edges sent",
-            sent, options.LogTemplates.Count, options.Calls.Count);
+            "ingest: stream finished — {Documents} documents, {Templates} log templates, {Calls} call edges, {Chunks} vector inputs sent",
+            sent, options.LogTemplates.Count, options.Calls.Count, options.Chunks.Count);
     }
 }

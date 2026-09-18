@@ -16,9 +16,18 @@ public record IndexCommandOptions(
     bool UseBuild,
     Uri? OutputUrl = null,
     bool Analyzers = false,
-    List<string>? Properties = null
+    List<string>? Properties = null,
+    bool EmitChunks = true
 )
 {
+    /// <summary>
+    /// Vector inputs collected while walking (side-channel next to the SCIP stream —
+    /// SCIP models symbols and references, never bodies): per method/constructor a
+    /// signature text, a body text with structural facts, and the logical blocks of
+    /// long bodies. Content-hashed so the loader embeds only text it has never seen.
+    /// </summary>
+    public List<ChunkFact> Chunks { get; } = new();
+
     /// <summary>
     /// Log-template facts collected while walking (side-channel next to the SCIP
     /// stream — the SCIP format itself does not model log templates). Posted to
@@ -60,3 +69,28 @@ public record LogTemplateFact(string File, int Line, string Level, string? Templ
 /// <param name="File">Document path relative to the working directory.</param>
 /// <param name="Line">1-based line of the call site.</param>
 public record CallFact(string CallerSymbol, string CalleeSymbol, string File, int Line);
+
+/// <summary>One vector input of a method/constructor discovered during indexing.</summary>
+/// <param name="Symbol">SCIP symbol id of the owning method/constructor.</param>
+/// <param name="Aspect">"signature", "body" or "block".</param>
+/// <param name="File">Document path relative to the working directory.</param>
+/// <param name="LineStart">1-based first line of the text's source span.</param>
+/// <param name="LineEnd">1-based last line of the text's source span.</param>
+/// <param name="TextHash">sha256 hex of <paramref name="NormalizedText"/> — the content key.</param>
+/// <param name="NormalizedText">Comment-free, whitespace-collapsed text to embed.</param>
+/// <param name="Ordinal">Block index within the method; 0 for signature and body.</param>
+/// <param name="BodyLines">Body line count (body aspect only).</param>
+/// <param name="MaxNestingDepth">Deepest statement nesting (body aspect only).</param>
+/// <param name="CyclomaticComplexity">1 + branching nodes (body aspect only).</param>
+public record ChunkFact(
+    string Symbol,
+    string Aspect,
+    string File,
+    int LineStart,
+    int LineEnd,
+    string TextHash,
+    string NormalizedText,
+    int Ordinal,
+    int BodyLines,
+    int MaxNestingDepth,
+    int CyclomaticComplexity);

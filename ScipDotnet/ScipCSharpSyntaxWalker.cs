@@ -209,8 +209,10 @@ public class ScipCSharpSyntaxWalker : CSharpSyntaxWalker
 
     public override void VisitConstructorDeclaration(ConstructorDeclarationSyntax node)
     {
-        _scipDocumentIndexer.VisitOccurrence(_semanticModel.GetDeclaredSymbol(node), node.Identifier.GetLocation(), true,
+        var symbol = _semanticModel.GetDeclaredSymbol(node);
+        _scipDocumentIndexer.VisitOccurrence(symbol, node.Identifier.GetLocation(), true,
             node.GetLocation());
+        _scipDocumentIndexer.RecordChunks(symbol, MethodChunker.Collect(node));
         base.VisitConstructorDeclaration(node);
     }
 
@@ -267,8 +269,10 @@ public class ScipCSharpSyntaxWalker : CSharpSyntaxWalker
 
     public override void VisitMethodDeclaration(MethodDeclarationSyntax node)
     {
-        _scipDocumentIndexer.VisitOccurrence(_semanticModel.GetDeclaredSymbol(node), node.Identifier.GetLocation(), true,
+        var symbol = _semanticModel.GetDeclaredSymbol(node);
+        _scipDocumentIndexer.VisitOccurrence(symbol, node.Identifier.GetLocation(), true,
             node.GetLocation());
+        _scipDocumentIndexer.RecordChunks(symbol, MethodChunker.Collect(node));
         base.VisitMethodDeclaration(node);
     }
 

@@ -44,6 +44,38 @@ public class ScipDocumentIndexer
     }
 
     /// <summary>
+    /// Records the vector inputs of a method/constructor (side-channel next to the SCIP
+    /// stream). Skipped when chunk collection is disabled, for generated documents (protobuf
+    /// and gRPC stubs, source-generator output — their bodies are templates repeated per
+    /// message and would dominate every similarity search), and for local or unresolved
+    /// symbols — their SCIP ids are document-scoped counters, meaningless as graph keys.
+    /// </summary>
+    /// <param name="symbol">The declared method or constructor symbol.</param>
+    /// <param name="drafts">The drafts produced by <see cref="MethodChunker"/>.</param>
+    public void RecordChunks(ISymbol? symbol, IReadOnlyList<ChunkDraft> drafts)
+    {
+        if (!_options.EmitChunks || symbol is null || drafts.Count == 0
+            || (DocumentRoles & (int)SymbolRole.Generated) != 0)
+        {
+            return;
+        }
+
+        var scip = CreateScipSymbol(symbol);
+        if (scip.IsLocal() || scip == ScipSymbol.Empty)
+        {
+            return;
+        }
+
+        foreach (var draft in drafts)
+        {
+            _options.Chunks.Add(new ChunkFact(
+                scip.Value, draft.Aspect, _doc.RelativePath ?? string.Empty, draft.LineStart, draft.LineEnd,
+                draft.TextHash, draft.NormalizedText, draft.Ordinal, draft.BodyLines, draft.MaxNestingDepth,
+                draft.CyclomaticComplexity));
+        }
+    }
+
+    /// <summary>
     /// Extra SCIP roles OR-ed into every occurrence of this document: Test for
     /// test-project documents, Generated for source-generated documents.
     /// </summary>
