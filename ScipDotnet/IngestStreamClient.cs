@@ -136,6 +136,8 @@ public static class IngestStreamClient
                 NormalizedText = fact.NormalizedText,
                 Ordinal = fact.Ordinal,
                 BodyLines = fact.BodyLines,
+                BodyTokens = fact.BodyTokens,
+                BodyStatements = fact.BodyStatements,
                 MaxNestingDepth = fact.MaxNestingDepth,
                 CyclomaticComplexity = fact.CyclomaticComplexity,
             }));

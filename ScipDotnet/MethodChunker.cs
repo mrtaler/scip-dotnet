@@ -17,28 +17,47 @@ namespace ScipDotnet;
 /// identical block buried inside a long one.
 /// <para>
 /// Three mechanical rules decide which blocks stand alone (syntactic blocks are not
-/// automatically logical units): a block under <see cref="BlockFloorLines"/> merges into
+/// automatically logical units): a block under <see cref="BlockFloorTokens"/> merges into
 /// its parent; a block covering at least <see cref="DominanceShare"/> of the body IS the
 /// body and gets no separate vector; a catch made only of throw/log statements is never a
 /// block. Text is normalized the same way for every aspect — comments removed, whitespace
 /// collapsed — so equal logic hashes equal regardless of layout.
 /// </para>
 /// <para>
-/// Structural facts are plain numbers on every method, thresholds live in queries:
-/// body line count, deepest statement nesting, and cyclomatic complexity as 1 plus the
-/// branching nodes (if, conditional, loops, catch, case labels and switch arms, &amp;&amp;, ||,
-/// ??, ??=).
+/// SIZE IS COUNTED IN TOKENS, NOT LINES, and that is the whole point of this class being
+/// re-cut. Measured over tms.queueitapi/src (1277 files, 2304 callables) with the previous
+/// line-based gates: a canonical reformat changed the emitted block set for 91 methods and
+/// moved 147 across the threshold; adding a blank line after every line changed 275 and
+/// moved 348 — while the text hashes moved for ZERO methods, because the embedded text is
+/// normalized. So identity was already deterministic and only the GATES were not: the same
+/// code, reformatted, was chunked differently and produced a different structural fact.
+/// Tokens exclude trivia, so whitespace, newlines and brace style cannot move them; the
+/// clone-detection field gates on tokens for exactly this reason (PMD CPD's minimum-tokens,
+/// CCFinder, SourcererCC). Physical lines survive only as a human-readable fact.
+/// </para>
+/// <para>
+/// Structural facts are plain numbers on every method, thresholds live in queries: token
+/// count and statement count (both formatting-invariant), body line count (informational),
+/// deepest statement nesting, and cyclomatic complexity as 1 plus the branching nodes (if,
+/// conditional, loops, catch, case labels and switch arms, &amp;&amp;, ||, ??, ??=).
 /// </para>
 /// </remarks>
 public static class MethodChunker
 {
-    /// <summary>Bodies longer than this many lines are split into blocks.</summary>
-    public const int BlockThresholdLines = 40;
+    /// <summary>
+    /// Bodies with more tokens than this are split into blocks. 180 tokens is the previous
+    /// 40-line gate translated through the measured median of 4.40 tokens per line, so the
+    /// population of split methods barely moves while the decision stops depending on layout.
+    /// </summary>
+    public const int BlockThresholdTokens = 180;
 
-    /// <summary>Blocks shorter than this many lines merge into their parent.</summary>
-    public const int BlockFloorLines = 5;
+    /// <summary>
+    /// Blocks with fewer tokens than this merge into their parent: the old 5-line floor at
+    /// the same measured density. A guard clause or a single call is not a logical unit.
+    /// </summary>
+    public const int BlockFloorTokens = 25;
 
-    /// <summary>A block covering this share of the body or more is the body itself.</summary>
+    /// <summary>A block covering this share of the body's tokens or more is the body itself.</summary>
     public const double DominanceShare = 0.8;
 
     private static readonly Regex Whitespace = new(@"\s+", RegexOptions.Compiled);
@@ -56,7 +75,7 @@ public static class MethodChunker
             .TrimEnd(';', ' ');
         if (headerText.Length > 0)
         {
-            drafts.Add(new ChunkDraft("signature", LineOf(node, node.SpanStart), LineOf(node, headerEnd - 1), headerText, 0, 0, 0, 0));
+            drafts.Add(new ChunkDraft("signature", LineOf(node, node.SpanStart), LineOf(node, headerEnd - 1), headerText, 0, 0, 0, 0, 0, 0));
         }
 
         if (body is null)
@@ -72,18 +91,18 @@ public static class MethodChunker
             return drafts;
         }
 
-        var bodyLines = LineCount(body);
+        var bodyTokens = TokenCount(body);
         drafts.Add(new ChunkDraft(
             "body", LineOf(node, body.SpanStart), LineOf(node, body.Span.End - 1), bodyText, 0,
-            bodyLines, MaxNestingDepth(body), CyclomaticComplexity(body)));
+            LineCount(body), bodyTokens, StatementCount(body), MaxNestingDepth(body), CyclomaticComplexity(body)));
 
-        if (node.Body is BlockSyntax outer && bodyLines > BlockThresholdLines)
+        if (node.Body is BlockSyntax outer && bodyTokens > BlockThresholdTokens)
         {
             var ordinal = 1;
             foreach (var candidate in BlockCandidates(outer))
             {
-                var lines = LineCount(candidate);
-                if (lines < BlockFloorLines || lines >= DominanceShare * bodyLines)
+                var tokens = TokenCount(candidate);
+                if (tokens < BlockFloorTokens || tokens >= DominanceShare * bodyTokens)
                 {
                     continue;
                 }
@@ -97,7 +116,7 @@ public static class MethodChunker
                 }
 
                 drafts.Add(new ChunkDraft(
-                    "block", LineOf(node, candidate.SpanStart), LineOf(node, candidate.Span.End - 1), text, ordinal++, 0, 0, 0));
+                    "block", LineOf(node, candidate.SpanStart), LineOf(node, candidate.Span.End - 1), text, ordinal++, 0, 0, 0, 0, 0));
             }
         }
 
@@ -255,6 +274,23 @@ public static class MethodChunker
 
         return 1 + branches;
     }
+
+    /// <summary>
+    /// Counts the node's tokens. Trivia (whitespace, newlines, comments) is not a token, so
+    /// this is invariant under every reformatting a human or an IDE performs.
+    /// </summary>
+    /// <param name="node">Any syntax node.</param>
+    /// <returns>The token count.</returns>
+    public static int TokenCount(SyntaxNode node) => node.DescendantTokens().Count();
+
+    /// <summary>
+    /// Counts the statements in the node, itself included: the logical size of the body,
+    /// the industry's LLOC as opposed to physical lines.
+    /// </summary>
+    /// <param name="node">Any syntax node.</param>
+    /// <returns>The statement count.</returns>
+    public static int StatementCount(SyntaxNode node) =>
+        node.DescendantNodesAndSelf().OfType<StatementSyntax>().Count();
 
     private static int LineCount(SyntaxNode node)
     {

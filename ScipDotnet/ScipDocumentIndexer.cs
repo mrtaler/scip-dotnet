@@ -70,8 +70,8 @@ public class ScipDocumentIndexer
         {
             _options.Chunks.Add(new ChunkFact(
                 scip.Value, draft.Aspect, _doc.RelativePath ?? string.Empty, draft.LineStart, draft.LineEnd,
-                draft.TextHash, draft.NormalizedText, draft.Ordinal, draft.BodyLines, draft.MaxNestingDepth,
-                draft.CyclomaticComplexity));
+                draft.TextHash, draft.NormalizedText, draft.Ordinal, draft.BodyLines, draft.BodyTokens,
+                draft.BodyStatements, draft.MaxNestingDepth, draft.CyclomaticComplexity));
         }
     }
 

@@ -79,7 +79,9 @@ public record CallFact(string CallerSymbol, string CalleeSymbol, string File, in
 /// <param name="TextHash">sha256 hex of <paramref name="NormalizedText"/> — the content key.</param>
 /// <param name="NormalizedText">Comment-free, whitespace-collapsed text to embed.</param>
 /// <param name="Ordinal">Block index within the method; 0 for signature and body.</param>
-/// <param name="BodyLines">Body line count (body aspect only).</param>
+/// <param name="BodyLines">Physical body line count, informational only (body aspect).</param>
+/// <param name="BodyTokens">Body token count — the formatting-invariant size (body aspect).</param>
+/// <param name="BodyStatements">Body statement count, the logical size (body aspect).</param>
 /// <param name="MaxNestingDepth">Deepest statement nesting (body aspect only).</param>
 /// <param name="CyclomaticComplexity">1 + branching nodes (body aspect only).</param>
 public record ChunkFact(
@@ -92,5 +94,7 @@ public record ChunkFact(
     string NormalizedText,
     int Ordinal,
     int BodyLines,
+    int BodyTokens,
+    int BodyStatements,
     int MaxNestingDepth,
     int CyclomaticComplexity);

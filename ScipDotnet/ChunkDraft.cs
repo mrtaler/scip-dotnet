@@ -12,7 +12,9 @@ namespace ScipDotnet;
 /// <param name="LineEnd">1-based last line of the span.</param>
 /// <param name="NormalizedText">Comment-free, whitespace-collapsed text.</param>
 /// <param name="Ordinal">Block index within the method; 0 for signature and body.</param>
-/// <param name="BodyLines">Body line count (body aspect only, else 0).</param>
+/// <param name="BodyLines">Physical body line count, informational only (body aspect, else 0).</param>
+/// <param name="BodyTokens">Body token count — the formatting-invariant size (body aspect, else 0).</param>
+/// <param name="BodyStatements">Body statement count, the logical size (body aspect, else 0).</param>
 /// <param name="MaxNestingDepth">Deepest statement nesting (body aspect only, else 0).</param>
 /// <param name="CyclomaticComplexity">1 + branching nodes (body aspect only, else 0).</param>
 public sealed record ChunkDraft(
@@ -22,6 +24,8 @@ public sealed record ChunkDraft(
     string NormalizedText,
     int Ordinal,
     int BodyLines,
+    int BodyTokens,
+    int BodyStatements,
     int MaxNestingDepth,
     int CyclomaticComplexity)
 {

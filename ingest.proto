@@ -122,10 +122,15 @@ message ChunkFact {
   string normalized_text = 7;
   // Block index within the method (0 for signature/body).
   int32 ordinal = 8;
-  // Structural facts, present on the "body" aspect only.
+  // Structural facts, present on the "body" aspect only. body_tokens is the size the
+  // chunker GATES on: tokens exclude trivia, so reformatting cannot move it, while
+  // body_lines is physical and informational (measured: a blank line after every line
+  // moved 348 of 2304 methods across a line-based threshold and none across a token one).
   int32 body_lines = 9;
   int32 max_nesting_depth = 10;
   int32 cyclomatic_complexity = 11;
+  int32 body_tokens = 12;
+  int32 body_statements = 13;
 }
 
 // Extension chunk: vector inputs collected while walking.
