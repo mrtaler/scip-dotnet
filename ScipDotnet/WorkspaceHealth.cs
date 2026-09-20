@@ -18,7 +18,15 @@ namespace ScipDotnet;
 /// The advisory list is deliberately narrow and message-based: a workspace failure is
 /// treated as benign ONLY when it matches a known advisory. Anything unrecognised keeps its
 /// old meaning and still marks the run partial, so a new kind of real breakage is never
-/// silently downgraded.
+/// silently downgraded. Matching is on the MESSAGE and not on the NuGet code because the
+/// workspace does not put the code in the text it hands over — read one of these messages
+/// and there is no NU1510 in it to match.
+/// </para>
+/// <para>
+/// The four families here came from the distinct failure messages actually present in the
+/// fleet's index logs, not from taste. What was deliberately LEFT as incompleteness: XAML
+/// markup errors (a failed markup compile can drop generated partial members from the C#
+/// model) and missing project references (types really are unresolved).
 /// </para>
 /// </remarks>
 public static class WorkspaceHealth
@@ -37,6 +45,16 @@ public static class WorkspaceHealth
         // model is complete; the phrase that identifies it is the substitution, not the
         // "not found", because a genuinely missing package never says what replaced it.
         new(@"was resolved instead", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+
+        // NuGet audit (NU1901-NU1904): "Package 'X' 9.0.1 has a known high severity
+        // vulnerability…". A security finding about a dependency, decided earlier to be run
+        // health rather than incompleteness: the types resolve, the package needs replacing.
+        new(@"has a known .*? severity vulnerability", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+
+        // NuGet TFM fallback (NU1701): "Package 'X' was restored using '.NETFramework…'
+        // instead of the project target framework". The assembly still loads and its types
+        // resolve; this is the normal shape of an old dependency in a modern project.
+        new(@"was restored using '\.NETFramework", RegexOptions.IgnoreCase | RegexOptions.Compiled),
     ];
 
     /// <summary>Classifies a workspace's diagnostics.</summary>
