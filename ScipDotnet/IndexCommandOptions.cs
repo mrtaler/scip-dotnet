@@ -21,6 +21,18 @@ public record IndexCommandOptions(
 )
 {
     /// <summary>
+    /// Milliseconds spent in the dotnet restore/build step, summed over projects. One of the
+    /// phase timings that make a slower run attributable instead of merely slower.
+    /// </summary>
+    public long RestoreMs { get; set; }
+
+    /// <summary>Advisory workspace diagnostics (run health), counted apart from incompleteness.</summary>
+    public int RunWarnings { get; set; }
+
+    /// <summary>One representative advisory message, for the reader who will not open the log.</summary>
+    public string? RunWarningSample { get; set; }
+
+    /// <summary>
     /// Vector inputs collected while walking (side-channel next to the SCIP stream —
     /// SCIP models symbols and references, never bodies): per method/constructor a
     /// signature text, a body text with structural facts, and the logical blocks of

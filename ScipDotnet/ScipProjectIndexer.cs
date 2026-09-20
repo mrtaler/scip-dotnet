@@ -57,21 +57,29 @@ public class ScipProjectIndexer
             }
         };
         options.Logger.LogInformation("$ dotnet {Arguments}", arguments);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         process.Start();
-        if (!process.WaitForExit(options.DotnetRestoreTimeout))
+        try
         {
-            Logger.LogWarning("Dotnet restore did not finish in {Time} milliseconds, the results of the indexing might be incorrect.", options.DotnetRestoreTimeout);
-            options.CompilationIncomplete = true;
-            options.PartialReason = $"{verb} did not finish within {options.DotnetRestoreTimeout} ms";
-            return;
-        }
+            if (!process.WaitForExit(options.DotnetRestoreTimeout))
+            {
+                Logger.LogWarning("Dotnet restore did not finish in {Time} milliseconds, the results of the indexing might be incorrect.", options.DotnetRestoreTimeout);
+                options.CompilationIncomplete = true;
+                options.PartialReason = $"{verb} did not finish within {options.DotnetRestoreTimeout} ms";
+                return;
+            }
 
-        if (process.ExitCode != 0)
+            if (process.ExitCode != 0)
+            {
+                options.CompilationIncomplete = true;
+                options.PartialReason = $"{verb} exited {process.ExitCode} (types may be unresolved)";
+                Logger.LogWarning("{Verb} exited {Code} for {Project} — symbols may be incomplete",
+                    verb, process.ExitCode, project.Name);
+            }
+        }
+        finally
         {
-            options.CompilationIncomplete = true;
-            options.PartialReason = $"{verb} exited {process.ExitCode} (types may be unresolved)";
-            Logger.LogWarning("{Verb} exited {Code} for {Project} — symbols may be incomplete",
-                verb, process.ExitCode, project.Name);
+            options.RestoreMs += stopwatch.ElapsedMilliseconds;
         }
     }
 

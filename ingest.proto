@@ -67,6 +67,20 @@ message IngestMeta {
   bool partial = 8;
   // Human-readable reason for partial (e.g. "build exited 1", "workspace load failures").
   string partial_reason = 9;
+  // RUN HEALTH, the second axis: workspace diagnostics that are ADVISORIES, not
+  // incompleteness (the SDK's package-pruning notice is the known family). Counting
+  // them towards partial made the main repository permanently partial while its graph
+  // was complete, which trains a reader to ignore the flag.
+  int32 run_warnings = 10;
+  // One representative advisory, so a reader judges without opening the run log.
+  string run_warning_sample = 11;
+  // Phase timings of the producer, in milliseconds: the dotnet restore/build step and
+  // the Roslyn walk that produced the documents. Without them a slower run cannot be
+  // attributed to a phase, and "the indexer got slower" is unanswerable.
+  int32 restore_ms = 12;
+  int32 walk_ms = 13;
+  // Time the producer spent writing to the channel (includes server backpressure).
+  int32 send_ms = 14;
 }
 
 // One Log*/BeginScope call site (extension; SCIP does not model log templates).

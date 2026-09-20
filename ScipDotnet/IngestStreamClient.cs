@@ -30,13 +30,13 @@ public static class IngestStreamClient
     /// <param name="ingestUrl">The h2c ingest endpoint; repo/commit/path/package/declares ride in the query string.</param>
     /// <param name="documents">The indexed documents, produced incrementally.</param>
     /// <param name="options">The index command options (extension side channels, logger).</param>
-    /// <param name="workspaceHasFailures">Checked after streaming (workspace diagnostics settle late) to mark the run partial.</param>
+    /// <param name="workspaceVerdict">Read after streaming (workspace diagnostics settle late): splits incompleteness from advisories.</param>
     /// <returns>A task that completes when the server confirms the session.</returns>
     public static async Task UploadAsync(
         Uri ingestUrl,
         IAsyncEnumerable<Scip.Document> documents,
         IndexCommandOptions options,
-        Func<bool>? workspaceHasFailures = null)
+        Func<WorkspaceVerdict>? workspaceVerdict = null)
     {
         var query = HttpUtility.ParseQueryString(ingestUrl.Query);
         var meta = new IngestMeta
@@ -80,10 +80,30 @@ public static class IngestStreamClient
         await call.RequestStream.WriteAsync(new IngestChunk { Meta = meta });
 
         var sent = 0;
-        await foreach (var document in documents)
+        var walk = new System.Diagnostics.Stopwatch();
+        var send = new System.Diagnostics.Stopwatch();
+        var enumerator = documents.GetAsyncEnumerator();
+        try
         {
-            await call.RequestStream.WriteAsync(new IngestChunk { Document = document });
-            sent++;
+            while (true)
+            {
+                walk.Start();
+                var hasNext = await enumerator.MoveNextAsync();
+                walk.Stop();
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                send.Start();
+                await call.RequestStream.WriteAsync(new IngestChunk { Document = enumerator.Current });
+                send.Stop();
+                sent++;
+            }
+        }
+        finally
+        {
+            await enumerator.DisposeAsync();
         }
 
         foreach (var batch in options.LogTemplates.Chunk(ExtensionBatchSize))
@@ -144,23 +164,54 @@ public static class IngestStreamClient
             await call.RequestStream.WriteAsync(new IngestChunk { Chunks = chunk });
         }
 
-        if (workspaceHasFailures?.Invoke() == true && !options.CompilationIncomplete)
+        var verdict = workspaceVerdict?.Invoke();
+        if (verdict is not null)
         {
-            options.CompilationIncomplete = true;
-            options.PartialReason = "MSBuild workspace reported load failures (unresolved references)";
+            options.RunWarnings += verdict.Advisories;
+            options.RunWarningSample ??= verdict.FirstAdvisory;
+            if (verdict.Incomplete && !options.CompilationIncomplete)
+            {
+                options.CompilationIncomplete = true;
+                options.PartialReason = verdict.FirstFailure
+                    ?? "MSBuild workspace reported load failures (unresolved references)";
+            }
         }
 
+        var telemetry = new IngestMeta
+        {
+            Repo = meta.Repo,
+            Partial = options.CompilationIncomplete,
+            RunWarnings = options.RunWarnings,
+            RestoreMs = (int)Math.Min(options.RestoreMs, int.MaxValue),
+            WalkMs = (int)Math.Min(walk.ElapsedMilliseconds, int.MaxValue),
+            SendMs = (int)Math.Min(send.ElapsedMilliseconds, int.MaxValue),
+        };
+        if (options.PartialReason != null)
+        {
+            telemetry.PartialReason = options.PartialReason;
+        }
+
+        if (options.RunWarningSample != null)
+        {
+            telemetry.RunWarningSample = options.RunWarningSample;
+        }
+
+        await call.RequestStream.WriteAsync(new IngestChunk { Meta = telemetry });
         if (options.CompilationIncomplete)
         {
-            var trailer = new IngestMeta { Repo = meta.Repo, Partial = true };
-            if (options.PartialReason != null)
-            {
-                trailer.PartialReason = options.PartialReason;
-            }
-
-            await call.RequestStream.WriteAsync(new IngestChunk { Meta = trailer });
             options.Logger.LogWarning("ingest: run marked PARTIAL — {Reason}", options.PartialReason);
         }
+
+        if (options.RunWarnings > 0)
+        {
+            options.Logger.LogInformation(
+                "ingest: {Count} workspace advisories (run health, NOT incompleteness), e.g. {Sample}",
+                options.RunWarnings, options.RunWarningSample);
+        }
+
+        options.Logger.LogInformation(
+            "ingest: phases — restore/build {RestoreMs} ms, Roslyn walk {WalkMs} ms, channel {SendMs} ms",
+            options.RestoreMs, walk.ElapsedMilliseconds, send.ElapsedMilliseconds);
 
         await call.RequestStream.CompleteAsync();
         await progressReader;

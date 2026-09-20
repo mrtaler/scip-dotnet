@@ -77,7 +77,7 @@ public static class IndexCommandHandler
             var indexer = host.Services.GetRequiredService<ScipProjectIndexer>();
             var ws = host.Services.GetRequiredService<MSBuildWorkspace>();
             await IngestStreamClient.UploadAsync(ingestUrl, indexer.IndexDocuments(host, options), options,
-                () => ws.Diagnostics.Any(d => d.Kind == Microsoft.CodeAnalysis.WorkspaceDiagnosticKind.Failure));
+                () => WorkspaceHealth.Classify(ws.Diagnostics));
         }
         else
         {
