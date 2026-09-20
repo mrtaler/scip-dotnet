@@ -284,13 +284,19 @@ public static class MethodChunker
     public static int TokenCount(SyntaxNode node) => node.DescendantTokens().Count();
 
     /// <summary>
-    /// Counts the statements in the node, itself included: the logical size of the body,
-    /// the industry's LLOC as opposed to physical lines.
+    /// Counts the statements in the node: the logical size of the body, the industry's LLOC as
+    /// opposed to physical lines.
     /// </summary>
     /// <param name="node">Any syntax node.</param>
     /// <returns>The statement count.</returns>
+    /// <remarks>
+    /// Blocks are EXCLUDED. A <see cref="BlockSyntax"/> is itself a statement in Roslyn's model,
+    /// so counting descendants-and-self added one per pair of braces: a two-line method reported
+    /// three statements, and every if/try inflated the figure further. LLOC counts what executes,
+    /// not the punctuation around it.
+    /// </remarks>
     public static int StatementCount(SyntaxNode node) =>
-        node.DescendantNodesAndSelf().OfType<StatementSyntax>().Count();
+        node.DescendantNodesAndSelf().OfType<StatementSyntax>().Count(statement => statement is not BlockSyntax);
 
     private static int LineCount(SyntaxNode node)
     {

@@ -25,6 +25,34 @@ public static class IngestStreamClient
     private const int ChunkBatchSize = 500;
 
     /// <summary>
+    /// Builds the session header from the ingest URL's query and the run's options.
+    /// </summary>
+    /// <param name="ingestUrl">The ingest endpoint; repo/commit/path/additive/package/declares ride in its query.</param>
+    /// <param name="options">The index command options; the analyzers flag comes from here.</param>
+    /// <returns>The meta chunk the server needs before the first document.</returns>
+    /// <remarks>
+    /// Separate from the streaming so it can be asserted without a server. The ANALYZERS flag in
+    /// particular is load-bearing: the loader keeps the analyzer diagnostics of an earlier run when
+    /// it is false, so silently losing it here would make a fast run delete a layer it cannot
+    /// reproduce. Only this side knows whether the analyzers actually ran.
+    /// </remarks>
+    public static IngestMeta BuildMeta(Uri ingestUrl, IndexCommandOptions options)
+    {
+        var query = HttpUtility.ParseQueryString(ingestUrl.Query);
+        var meta = new IngestMeta
+        {
+            Repo = query["repo"] ?? string.Empty,
+            Commit = query["commit"] ?? string.Empty,
+            Path = query["path"] ?? string.Empty,
+            Additive = string.Equals(query["additive"], "true", StringComparison.OrdinalIgnoreCase),
+            Analyzers = options.Analyzers,
+        };
+        meta.PackageIds.AddRange(query.GetValues("package") ?? Array.Empty<string>());
+        meta.DeclaredPackages.AddRange(query.GetValues("declares") ?? Array.Empty<string>());
+        return meta;
+    }
+
+    /// <summary>
     /// Runs the streaming upload session against <paramref name="ingestUrl"/>.
     /// </summary>
     /// <param name="ingestUrl">The h2c ingest endpoint; repo/commit/path/package/declares ride in the query string.</param>
@@ -38,17 +66,7 @@ public static class IngestStreamClient
         IndexCommandOptions options,
         Func<WorkspaceVerdict>? workspaceVerdict = null)
     {
-        var query = HttpUtility.ParseQueryString(ingestUrl.Query);
-        var meta = new IngestMeta
-        {
-            Repo = query["repo"] ?? string.Empty,
-            Commit = query["commit"] ?? string.Empty,
-            Path = query["path"] ?? string.Empty,
-            Additive = string.Equals(query["additive"], "true", StringComparison.OrdinalIgnoreCase),
-            Analyzers = options.Analyzers,
-        };
-        meta.PackageIds.AddRange(query.GetValues("package") ?? Array.Empty<string>());
-        meta.DeclaredPackages.AddRange(query.GetValues("declares") ?? Array.Empty<string>());
+        var meta = BuildMeta(ingestUrl, options);
 
         var channelAddress = new UriBuilder(ingestUrl) { Query = string.Empty, Path = string.Empty }.Uri;
         using var channel = GrpcChannel.ForAddress(channelAddress, new GrpcChannelOptions
