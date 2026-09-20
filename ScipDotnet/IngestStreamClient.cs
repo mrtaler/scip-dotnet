@@ -45,6 +45,7 @@ public static class IngestStreamClient
             Commit = query["commit"] ?? string.Empty,
             Path = query["path"] ?? string.Empty,
             Additive = string.Equals(query["additive"], "true", StringComparison.OrdinalIgnoreCase),
+            Analyzers = options.Analyzers,
         };
         meta.PackageIds.AddRange(query.GetValues("package") ?? Array.Empty<string>());
         meta.DeclaredPackages.AddRange(query.GetValues("declares") ?? Array.Empty<string>());

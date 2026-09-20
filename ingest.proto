@@ -81,6 +81,12 @@ message IngestMeta {
   int32 walk_ms = 13;
   // Time the producer spent writing to the channel (includes server backpressure).
   int32 send_ms = 14;
+  // This run RAN the configured Roslyn analyzers, so its diagnostics include the
+  // analyzer-sourced ones and the loader may replace that whole layer. A run
+  // WITHOUT analyzers carries compiler diagnostics only: the loader must then keep
+  // the analyzer layer a previous run loaded instead of deleting what it cannot
+  // reproduce, because a fast run's silence is not the same as "no warnings".
+  bool analyzers = 15;
 }
 
 // One Log*/BeginScope call site (extension; SCIP does not model log templates).

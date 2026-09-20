@@ -63,7 +63,8 @@ public static class Program
             new Option<bool>("--analyzers", () => false,
                 "Also run the projects' configured Roslyn analyzers (StyleCop/Sonar/etc.) and emit their " +
                 "diagnostics into the SCIP index. Compiler diagnostics are always emitted; analyzer runs " +
-                "are noticeably slower, hence opt-in."),
+                "are noticeably slower, hence opt-in. The flag is also reported to the ingest endpoint, " +
+                "which keeps the analyzer layer of an earlier run intact when this one did not produce it."),
             new Option<List<string>>("--property", () => new List<string>(),
                 "MSBuild property as Key=Value, applied to both the restore/build step and the " +
                 "MSBuildWorkspace evaluation (e.g. --property EnableWindowsTargeting=true). Repeatable.")
