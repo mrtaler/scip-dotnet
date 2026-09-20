@@ -31,6 +31,12 @@ public static class WorkspaceHealth
         // .NET 10 SDK package pruning (NU1510): "PackageReference System.Formats.Asn1 will
         // not be pruned. Consider removing this package from your dependencies…"
         new(@"will not be pruned", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+
+        // NuGet version fallback (NU1603): "X depends on Y (>= 2.72.0) but Y 2.72.0 was not
+        // found. Y 2.76.0 was resolved instead." A HIGHER version was substituted, so the
+        // model is complete; the phrase that identifies it is the substitution, not the
+        // "not found", because a genuinely missing package never says what replaced it.
+        new(@"was resolved instead", RegexOptions.IgnoreCase | RegexOptions.Compiled),
     ];
 
     /// <summary>Classifies a workspace's diagnostics.</summary>
