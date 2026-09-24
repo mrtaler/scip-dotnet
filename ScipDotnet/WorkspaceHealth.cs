@@ -23,7 +23,7 @@ namespace ScipDotnet;
 /// and there is no NU1510 in it to match.
 /// </para>
 /// <para>
-/// The four families here came from the distinct failure messages actually present in the
+/// The five families here came from the distinct failure messages actually present in the
 /// fleet's index logs, not from taste. What was deliberately LEFT as incompleteness: XAML
 /// markup errors (a failed markup compile can drop generated partial members from the C#
 /// model) and missing project references (types really are unresolved).
@@ -55,6 +55,14 @@ public static class WorkspaceHealth
         // instead of the project target framework". The assembly still loads and its types
         // resolve; this is the normal shape of an old dependency in a modern project.
         new(@"was restored using '\.NETFramework", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+
+        // SDK TFM compatibility warning: "Package X doesn't support netY.0 and has not been
+        // tested with it. Consider upgrading your TargetFramework…". The package still loads
+        // under the .NET compatibility shim; the project builds with exit 0 and no errors, so
+        // the graph is complete. Matched on the SDK's fixed phrase rather than any package
+        // name because any package may emit this advisory on a newer, unsupported target
+        // framework.
+        new(@"has not been tested with it", RegexOptions.IgnoreCase | RegexOptions.Compiled),
     ];
 
     /// <summary>Classifies a workspace's diagnostics.</summary>
